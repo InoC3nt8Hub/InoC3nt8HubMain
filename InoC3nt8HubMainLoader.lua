@@ -21,7 +21,6 @@ local SupportedGames = {
     
 }
 
-https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/HomeAloneAnomaly.lua.txt
 --------------------------------------------------
 -- PLACE CHECK
 --------------------------------------------------
