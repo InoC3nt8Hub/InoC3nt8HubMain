@@ -7,7 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local SupportedGames = {
 
-    [11765763028] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/ReignFallScriptUpdateV3.lua.txt",
+    [11765763028] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/ReignFallScriptNewUpdated.lua.txt",
 
     [79399613552695] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/SomTum_AnomalyScript.lua.txt",
 
