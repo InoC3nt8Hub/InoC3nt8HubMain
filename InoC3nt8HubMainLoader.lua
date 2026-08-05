@@ -16,10 +16,12 @@ local SupportedGames = {
     [107186729022278] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/KillZombiesInArea51.lua.txt",
 
     [82554996468034] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/%2B1%20Pickaxe%20Swing%20Escape.lua.txt",
-
+    
+    [87468080405188] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/HomeAloneAnomaly.lua.txt",
+    
 }
 
-
+https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/HomeAloneAnomaly.lua.txt
 --------------------------------------------------
 -- PLACE CHECK
 --------------------------------------------------
