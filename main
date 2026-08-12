@@ -21,7 +21,7 @@ local SupportedGames = {
 
   [115681808123944] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/ThrowACoinScript.lua",
 
-  [135741623561779] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/BackroomsCompanyScript.lua.txt",
+  [135741623561779] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/BackroomsCompanyScriptFix.lua.txt",
 
 }
 
