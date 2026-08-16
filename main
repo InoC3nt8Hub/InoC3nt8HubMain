@@ -25,6 +25,8 @@ local SupportedGames = {
 
 [111902511656171] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/WardenSurvivalEscape.lua.txt",
 
+     [17457039279] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/DarkestHoursScriptBeta.lua.txt",
+
 
 }
 
