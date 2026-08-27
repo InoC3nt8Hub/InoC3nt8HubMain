@@ -1,0 +1,462 @@
+--[[
+    Auto Farm – No Toggle
+    Starts automatically when executed.
+    - Collects the highest‑value item from Workspace.GameTriggers.Items
+    - Returns to HQ when inventory is full, weight limit reached, quota met, or intermission
+    - Drops items at HQ using the proper remote
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Player = Players.LocalPlayer
+
+-- ============================================================
+-- CONFIGURATION
+-- ============================================================
+local ITEM_FOLDER = Workspace:WaitForChild("GameTriggers"):WaitForChild("Items")
+local HQ_POINT = Workspace:WaitForChild("HQRespawnPoint")
+local LOOP_DELAY = 0.03          -- time between pick attempts
+local HQ_PAUSE = 3               -- seconds to wait at HQ after dropping
+local DROP_INTERVAL = 0.05       -- delay between dropping each item
+
+local FarmRunning = true         -- set to false to stop the farm
+
+-- ============================================================
+-- HELPER: Character & Root
+-- ============================================================
+local function GetRoot()
+    local char = Player.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHumanoid()
+    local char = Player.Character
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+-- ============================================================
+-- HELPER: HQ Teleport
+-- ============================================================
+local function GetHQCFrame()
+    if HQ_POINT:IsA("BasePart") then
+        return HQ_POINT.CFrame
+    elseif HQ_POINT:IsA("Model") then
+        return HQ_POINT:GetPivot()
+    end
+    return nil
+end
+
+local function TeleportHQ()
+    local root = GetRoot()
+    local hqCFrame = GetHQCFrame()
+    if root and hqCFrame then
+        root.CFrame = hqCFrame + Vector3.new(0, 3, 0)   -- stand above spawn point
+        return true
+    end
+    return false
+end
+
+-- ============================================================
+-- HELPER: Quota & Intermission (use multiple sources)
+-- ============================================================
+local function GetCurrentProfit()
+    return tonumber(ReplicatedStorage:GetAttribute("CurrentLevelProfit")) or 0
+end
+
+local function GetProfitQuota()
+    local quota = ReplicatedStorage:GetAttribute("profitQuota")
+    if not quota then quota = ReplicatedStorage:GetAttribute("ProfitQuota") end
+    return tonumber(quota) or 0
+end
+
+local function IsGoalComplete()
+    local current = GetCurrentProfit()
+    local goal = GetProfitQuota()
+    return goal > 0 and current >= goal
+end
+
+-- Check the quota‑reached indicator in the GUI
+local function IsQuotaIndicatorActive()
+    local mainHud = Player:FindFirstChild("PlayerGui") and Player.PlayerGui:FindFirstChild("MainHud")
+    if not mainHud then return false end
+    if mainHud:GetAttribute("VisuallyQuotaMet") == true then return true end
+    for _, obj in ipairs(mainHud:GetDescendants()) do
+        if obj:GetAttribute("VisuallyQuotaMet") == true then return true end
+    end
+    return false
+end
+
+-- Check any attribute containing "intermission" set to true
+local function IsIntermission()
+    local containers = { ReplicatedStorage, Workspace, Player, Player:FindFirstChild("PlayerGui") }
+    for _, container in ipairs(containers) do
+        if container then
+            for name, value in pairs(container:GetAttributes()) do
+                if string.lower(name):find("intermission", 1, true) and value == true then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- ============================================================
+-- HELPER: Inventory & Weight
+-- ============================================================
+local function GetInventory()
+    local inventories = ReplicatedStorage:FindFirstChild("Inventories")
+    if not inventories then return nil end
+    return inventories:FindFirstChild(tostring(Player.UserId))
+end
+
+local function GetMaxSlots()
+    return (Player:GetAttribute("HasExtraInventorySlot") == true) and 5 or 4
+end
+
+local function IsInventoryFull()
+    if Player:GetAttribute("HandsFull") == true then return true end
+    local inv = GetInventory()
+    if not inv then return false end
+    return #inv:GetChildren() >= GetMaxSlots()
+end
+
+local function GetInventoryWeight()
+    local inv = GetInventory()
+    if not inv then return 0 end
+    local total = 0
+    for _, item in ipairs(inv:GetChildren()) do
+        total = total + (tonumber(item:GetAttribute("weight")) or 0)
+    end
+    return total
+end
+
+local function GetMaxWeight()
+    -- try common attribute names
+    local names = { "MaxWeight", "maxWeight", "WeightLimit", "weightLimit", "CarryWeight", "MaxCarryWeight" }
+    for _, name in ipairs(names) do
+        local val = tonumber(Player:GetAttribute(name))
+        if val then return val end
+        val = tonumber(ReplicatedStorage:GetAttribute(name))
+        if val then return val end
+    end
+    return nil
+end
+
+local function IsWeightFull()
+    local maxWeight = GetMaxWeight()
+    if not maxWeight or maxWeight <= 0 then return false end
+    return GetInventoryWeight() >= maxWeight
+end
+
+-- ============================================================
+-- HELPER: Item Info & Prompt Setup
+-- ============================================================
+local function GetItemPrice(item)
+    return tonumber(item:GetAttribute("price")) or 0
+end
+
+local function GetItemWeight(item)
+    return tonumber(item:GetAttribute("weight")) or 0
+end
+
+local function IsValidItem(item)
+    if not item or not item.Parent then return false end
+    return item:IsA("Tool") or item:IsA("Model") or item:IsA("BasePart")
+end
+
+-- Configure a proximity prompt for instant use
+local function SetupPrompt(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    pcall(function()
+        prompt.MaxActivationDistance = 20
+        prompt.HoldDuration = 0
+        prompt.RequiresLineOfSight = false
+        prompt.KeyboardKeyCode = Enum.KeyCode.E
+    end)
+end
+
+local function FindPrompt(item)
+    if not item then return nil end
+    if item:IsA("ProximityPrompt") then
+        SetupPrompt(item)
+        return item
+    end
+    local prompt = item:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt then SetupPrompt(prompt) end
+    return prompt
+end
+
+-- Get the main BasePart of an item
+local function GetItemPart(item)
+    if not item then return nil end
+    if item:IsA("BasePart") then return item end
+    if item:IsA("Tool") then
+        return item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart", true)
+    end
+    if item:IsA("Model") then
+        return item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart", true)
+    end
+    return item:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- ============================================================
+-- CORE: Instant Pickup (FIXED TELEPORT)
+-- ============================================================
+local function InstantPickup(item)
+    if not IsValidItem(item) then return false end
+
+    local root = GetRoot()
+    local part = GetItemPart(item)
+    local prompt = FindPrompt(item)
+
+    if not root or not part or not prompt then return false end
+
+    -- Teleport the player's RootPart to stand ON TOP of the item
+    -- Using world-space upward offset: half the part's height + 1 stud clearance
+    local partPos = part.Position
+    local heightOffset = (part.Size.Y / 2) + 1
+    local targetPos = partPos + Vector3.new(0, heightOffset, 0)
+
+    pcall(function()
+        root.CFrame = CFrame.new(targetPos)
+    end)
+
+    -- Fire the prompt instantly
+    pcall(function()
+        fireproximityprompt(prompt, 0)
+    end)
+
+    return true
+end
+
+-- ============================================================
+-- CORE: Find Highest‑Value Item
+-- ============================================================
+local function GetBestItem()
+    local bestItem = nil
+    local bestPrice = -math.huge
+
+    for _, item in ipairs(ITEM_FOLDER:GetChildren()) do
+        if IsValidItem(item) then
+            local prompt = FindPrompt(item)
+            if prompt then
+                local price = GetItemPrice(item)
+                if price > bestPrice then
+                    bestPrice = price
+                    bestItem = item
+                end
+            end
+        end
+    end
+    return bestItem
+end
+
+-- ============================================================
+-- CORE: Drop Inventory at HQ
+-- ============================================================
+local DropRemote = ReplicatedStorage:FindFirstChild("RemoteEvents")
+                    and ReplicatedStorage.RemoteEvents:FindFirstChild("playerDropItemEvent")
+
+local function DropAllItems()
+    local inventory = GetInventory()
+    if not inventory or not DropRemote then return end
+
+    -- copy items to avoid modification during iteration
+    local items = inventory:GetChildren()
+    for _, item in ipairs(items) do
+        if item and item.Parent == inventory then
+            pcall(function()
+                DropRemote:FireServer(item)
+            end)
+            task.wait(DROP_INTERVAL)
+        end
+    end
+end
+
+-- ============================================================
+-- STATE: Handle Full Inventory / Weight
+-- ============================================================
+local function HandleFullInventory()
+    TeleportHQ()
+    task.wait(HQ_PAUSE)
+    DropAllItems()
+    task.wait(0.5)          -- allow drops to register
+    return true
+end
+
+-- ============================================================
+-- STATE: Check if we should return to HQ
+-- ============================================================
+local function ShouldReturnHQ()
+    if IsGoalComplete() then return true, "Goal Complete" end
+    if IsQuotaIndicatorActive() then return true, "Quota Reached" end
+    if IsIntermission() then return true, "Intermission" end
+    if IsInventoryFull() then return true, "Inventory Full" end
+    if IsWeightFull() then return true, "Weight Full" end
+    return false, nil
+end
+
+-- ============================================================
+-- MAIN FARM LOOP
+-- ============================================================
+local function StartAutoFarm()
+    print("[AutoFarm] Started")
+
+    while FarmRunning do
+        -- Wait for character to be ready
+        local root = GetRoot()
+        if not root then
+            task.wait(0.2)
+            continue
+        end
+
+        -- Check if we need to return to HQ
+        local shouldReturn, reason = ShouldReturnHQ()
+        if shouldReturn then
+            print("[AutoFarm] Returning to HQ:", reason)
+            TeleportHQ()
+
+            -- If quota/intermission – wait until it clears
+            if reason == "Goal Complete" or reason == "Quota Reached" then
+                repeat
+                    task.wait(0.25)
+                until not FarmRunning or (not IsGoalComplete() and not IsQuotaIndicatorActive())
+                continue
+            end
+
+            if reason == "Intermission" then
+                repeat
+                    task.wait(0.25)
+                until not FarmRunning or not IsIntermission()
+                continue
+            end
+
+            -- Inventory/Weight full – drop at HQ
+            if reason == "Inventory Full" or reason == "Weight Full" then
+                HandleFullInventory()
+                continue
+            end
+        end
+
+        -- Pick the best item
+        local item = GetBestItem()
+        if item then
+            local price = GetItemPrice(item)
+            local weight = GetItemWeight(item)
+            print(string.format("[AutoFarm] Picking %s (price: %d, weight: %d)", item.Name, price, weight))
+            InstantPickup(item)
+            task.wait(LOOP_DELAY)
+        else
+            -- No items available right now
+            task.wait(LOOP_DELAY)
+        end
+    end
+
+    print("[AutoFarm] Stopped")
+end
+
+-- ============================================================
+-- EVENT: Character Respawn
+-- ============================================================
+Player.CharacterAdded:Connect(function(character)
+    character:WaitForChild("HumanoidRootPart", 10)
+    task.wait(0.2)
+    if FarmRunning then
+        print("[AutoFarm] Character respawned")
+    end
+end)
+
+-- ============================================================
+-- 🎨 UI: DRAGGABLE TOGGLE (Added without modifying core logic)
+-- ============================================================
+local ToggleGui = Instance.new("ScreenGui")
+ToggleGui.Parent = Player:WaitForChild("PlayerGui")
+ToggleGui.ResetOnSpawn = false
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Parent = ToggleGui
+MainFrame.Size = UDim2.new(0, 180, 0, 44)
+MainFrame.Position = UDim2.new(0.5, -90, 0.02, 0) -- Top center
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
+
+local Corner = Instance.new("UICorner")
+Corner.Parent = MainFrame
+Corner.CornerRadius = UDim.new(0, 12)
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Parent = MainFrame
+Stroke.Color = Color3.fromRGB(255, 255, 255)
+Stroke.Thickness = 1.5
+Stroke.Transparency = 0.8
+
+local Title = Instance.new("TextLabel")
+Title.Parent = MainFrame
+Title.Size = UDim2.new(0, 85, 1, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "🤖 Auto Farm"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamSemibold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local Track = Instance.new("Frame")
+Track.Parent = MainFrame
+Track.Size = UDim2.new(0, 48, 0, 24)
+Track.Position = UDim2.new(1, -60, 0.5, -12)
+Track.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+Track.BorderSizePixel = 0
+
+local TrackCorner = Instance.new("UICorner")
+TrackCorner.Parent = Track
+TrackCorner.CornerRadius = UDim.new(1, 0)
+
+local Thumb = Instance.new("TextButton")
+Thumb.Parent = Track
+Thumb.Size = UDim2.new(0, 18, 0, 18)
+Thumb.Position = UDim2.new(0, 3, 0, 3) -- OFF position
+Thumb.BackgroundColor3 = Color3.new(1, 1, 1)
+Thumb.BorderSizePixel = 0
+Thumb.Text = ""
+Thumb.ZIndex = 2
+
+local ThumbCorner = Instance.new("UICorner")
+ThumbCorner.Parent = Thumb
+ThumbCorner.CornerRadius = UDim.new(1, 0)
+
+local function UpdateUI(state)
+    if state then
+        Track.BackgroundColor3 = Color3.fromRGB(0, 200, 100) -- Green (ON)
+        Thumb.Position = UDim2.new(1, -21, 0, 3)
+    else
+        Track.BackgroundColor3 = Color3.fromRGB(60, 60, 70) -- Gray (OFF)
+        Thumb.Position = UDim2.new(0, 3, 0, 3)
+    end
+end
+
+-- Set initial UI state (FarmRunning = true)
+UpdateUI(FarmRunning)
+
+Thumb.MouseButton1Click:Connect(function()
+    FarmRunning = not FarmRunning
+    UpdateUI(FarmRunning)
+
+    if FarmRunning then
+        -- Restart the farm loop if it has stopped
+        if not FarmThread or coroutine.status(FarmThread) == "dead" then
+            FarmThread = task.spawn(StartAutoFarm)
+        end
+    end
+end)
+
+-- ============================================================
+-- START (Track the thread so toggle can restart it)
+-- ============================================================
+FarmThread = task.spawn(StartAutoFarm)
