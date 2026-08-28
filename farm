@@ -11,9 +11,9 @@ local Player = Players.LocalPlayer
 local ITEM_FOLDER = Workspace:WaitForChild("GameTriggers"):WaitForChild("Items")
 local HQ_POINT = Workspace:WaitForChild("HQRespawnPoint")
 local LOOP_DELAY = 0.03
-local HQ_PAUSE = 0.01
+local HQ_PAUSE = 1
 local DROP_INTERVAL = 0.05
-local NO_ITEM_RETURN_DELAY = 0.01   -- Wait at HQ if no items found
+local NO_ITEM_RETURN_DELAY = 1  -- Wait at HQ if no items found
 
 local FarmRunning = true
 
