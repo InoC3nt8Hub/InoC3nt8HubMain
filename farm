@@ -5,13 +5,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
 
+
 local ITEM_FOLDER = Workspace:WaitForChild("GameTriggers"):WaitForChild("Items")
 local HQ_POINT = Workspace:WaitForChild("HQRespawnPoint")
-local LOOP_DELAY = 0.03          
-local HQ_PAUSE = 3              
-local DROP_INTERVAL = 0.05      
+local LOOP_DELAY = 0.03          -- time between pick attempts
+local HQ_PAUSE = 3               -- seconds to wait at HQ after dropping
+local DROP_INTERVAL = 0.05       -- delay between dropping each item
+local NO_ITEM_RETURN_DELAY = 2   -- << NEW: wait time at HQ when no items exist
 
-local FarmRunning = true
+local FarmRunning = true         -- set to false to stop the farm
 
 
 local function GetRoot()
@@ -193,7 +195,6 @@ local function InstantPickup(item)
     if not root or not part or not prompt then return false end
 
     -- Teleport the player's RootPart to stand ON TOP of the item
-    -- Using world-space upward offset: half the part's height + 1 stud clearance
     local partPos = part.Position
     local heightOffset = (part.Size.Y / 2) + 1
     local targetPos = partPos + Vector3.new(0, heightOffset, 0)
@@ -237,7 +238,6 @@ local function DropAllItems()
     local inventory = GetInventory()
     if not inventory or not DropRemote then return end
 
-    -- copy items to avoid modification during iteration
     local items = inventory:GetChildren()
     for _, item in ipairs(items) do
         if item and item.Parent == inventory then
@@ -254,7 +254,7 @@ local function HandleFullInventory()
     TeleportHQ()
     task.wait(HQ_PAUSE)
     DropAllItems()
-    task.wait(0.5)          -- allow drops to register
+    task.wait(0.5)
     return true
 end
 
@@ -280,13 +280,12 @@ local function StartAutoFarm()
             continue
         end
 
-        -- Check if we need to return to HQ
+        -- Check if we need to return to HQ (Full inv, quota, etc.)
         local shouldReturn, reason = ShouldReturnHQ()
         if shouldReturn then
             print("[AutoFarm] Returning to HQ:", reason)
             TeleportHQ()
 
-            -- If quota/intermission – wait until it clears
             if reason == "Goal Complete" or reason == "Quota Reached" then
                 repeat
                     task.wait(0.25)
@@ -301,14 +300,13 @@ local function StartAutoFarm()
                 continue
             end
 
-            -- Inventory/Weight full – drop at HQ
             if reason == "Inventory Full" or reason == "Weight Full" then
                 HandleFullInventory()
                 continue
             end
         end
 
-        -- Pick the best item
+
         local item = GetBestItem()
         if item then
             local price = GetItemPrice(item)
@@ -317,8 +315,10 @@ local function StartAutoFarm()
             InstantPickup(item)
             task.wait(LOOP_DELAY)
         else
-            -- No items available right now
-            task.wait(LOOP_DELAY)
+            -- 🔥 ITEM NOT FOUND → Return to HQ & wait for respawns
+            print("[AutoFarm] No items found. Teleporting to HQ and waiting...")
+            TeleportHQ()
+            task.wait(NO_ITEM_RETURN_DELAY) -- Wait 2 seconds before checking again
         end
     end
 
@@ -342,7 +342,7 @@ ToggleGui.ResetOnSpawn = false
 local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ToggleGui
 MainFrame.Size = UDim2.new(0, 180, 0, 44)
-MainFrame.Position = UDim2.new(0.5, -90, 0.02, 0) -- Top center
+MainFrame.Position = UDim2.new(0.5, -90, 0.02, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BackgroundTransparency = 0.15
 MainFrame.BorderSizePixel = 0
@@ -385,7 +385,7 @@ TrackCorner.CornerRadius = UDim.new(1, 0)
 local Thumb = Instance.new("TextButton")
 Thumb.Parent = Track
 Thumb.Size = UDim2.new(0, 18, 0, 18)
-Thumb.Position = UDim2.new(0, 3, 0, 3) -- OFF position
+Thumb.Position = UDim2.new(0, 3, 0, 3)
 Thumb.BackgroundColor3 = Color3.new(1, 1, 1)
 Thumb.BorderSizePixel = 0
 Thumb.Text = ""
@@ -397,15 +397,14 @@ ThumbCorner.CornerRadius = UDim.new(1, 0)
 
 local function UpdateUI(state)
     if state then
-        Track.BackgroundColor3 = Color3.fromRGB(0, 200, 100) -- Green (ON)
+        Track.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
         Thumb.Position = UDim2.new(1, -21, 0, 3)
     else
-        Track.BackgroundColor3 = Color3.fromRGB(60, 60, 70) -- Gray (OFF)
+        Track.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         Thumb.Position = UDim2.new(0, 3, 0, 3)
     end
 end
 
--- Set initial UI state (FarmRunning = true)
 UpdateUI(FarmRunning)
 
 Thumb.MouseButton1Click:Connect(function()
@@ -413,7 +412,6 @@ Thumb.MouseButton1Click:Connect(function()
     UpdateUI(FarmRunning)
 
     if FarmRunning then
-        -- Restart the farm loop if it has stopped
         if not FarmThread or coroutine.status(FarmThread) == "dead" then
             FarmThread = task.spawn(StartAutoFarm)
         end
