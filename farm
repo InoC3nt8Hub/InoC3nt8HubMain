@@ -5,17 +5,21 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
 
-
+-- ============================================================
+-- CONFIGURATION
+-- ============================================================
 local ITEM_FOLDER = Workspace:WaitForChild("GameTriggers"):WaitForChild("Items")
 local HQ_POINT = Workspace:WaitForChild("HQRespawnPoint")
-local LOOP_DELAY = 0.03          -- time between pick attempts
-local HQ_PAUSE = 0               -- seconds to wait at HQ after dropping
-local DROP_INTERVAL = 0.05       -- delay between dropping each item
-local NO_ITEM_RETURN_DELAY = 0   -- << NEW: wait time at HQ when no items exist
+local LOOP_DELAY = 0.03
+local HQ_PAUSE = 3
+local DROP_INTERVAL = 0.05
+local NO_ITEM_RETURN_DELAY = 2   -- Wait at HQ if no items found
 
-local FarmRunning = true         -- set to false to stop the farm
+local FarmRunning = true
 
-
+-- ============================================================
+-- HELPER: Character & Root
+-- ============================================================
 local function GetRoot()
     local char = Player.Character
     return char and char:FindFirstChild("HumanoidRootPart")
@@ -26,7 +30,9 @@ local function GetHumanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
-
+-- ============================================================
+-- HELPER: HQ Teleport
+-- ============================================================
 local function GetHQCFrame()
     if HQ_POINT:IsA("BasePart") then
         return HQ_POINT.CFrame
@@ -40,13 +46,15 @@ local function TeleportHQ()
     local root = GetRoot()
     local hqCFrame = GetHQCFrame()
     if root and hqCFrame then
-        root.CFrame = hqCFrame + Vector3.new(0, 3, 0)   -- stand above spawn point
+        root.CFrame = hqCFrame + Vector3.new(0, 3, 0)
         return true
     end
     return false
 end
 
-
+-- ============================================================
+-- HELPER: Quota & Intermission
+-- ============================================================
 local function GetCurrentProfit()
     return tonumber(ReplicatedStorage:GetAttribute("CurrentLevelProfit")) or 0
 end
@@ -63,7 +71,6 @@ local function IsGoalComplete()
     return goal > 0 and current >= goal
 end
 
--- Check the quota‑reached indicator in the GUI
 local function IsQuotaIndicatorActive()
     local mainHud = Player:FindFirstChild("PlayerGui") and Player.PlayerGui:FindFirstChild("MainHud")
     if not mainHud then return false end
@@ -74,7 +81,6 @@ local function IsQuotaIndicatorActive()
     return false
 end
 
--- Check any attribute containing "intermission" set to true
 local function IsIntermission()
     local containers = { ReplicatedStorage, Workspace, Player, Player:FindFirstChild("PlayerGui") }
     for _, container in ipairs(containers) do
@@ -89,7 +95,9 @@ local function IsIntermission()
     return false
 end
 
-
+-- ============================================================
+-- HELPER: Inventory & Weight
+-- ============================================================
 local function GetInventory()
     local inventories = ReplicatedStorage:FindFirstChild("Inventories")
     if not inventories then return nil end
@@ -118,7 +126,6 @@ local function GetInventoryWeight()
 end
 
 local function GetMaxWeight()
-    -- try common attribute names
     local names = { "MaxWeight", "maxWeight", "WeightLimit", "weightLimit", "CarryWeight", "MaxCarryWeight" }
     for _, name in ipairs(names) do
         local val = tonumber(Player:GetAttribute(name))
@@ -135,7 +142,9 @@ local function IsWeightFull()
     return GetInventoryWeight() >= maxWeight
 end
 
-
+-- ============================================================
+-- HELPER: Item Info & Prompt Setup
+-- ============================================================
 local function GetItemPrice(item)
     return tonumber(item:GetAttribute("price")) or 0
 end
@@ -149,7 +158,6 @@ local function IsValidItem(item)
     return item:IsA("Tool") or item:IsA("Model") or item:IsA("BasePart")
 end
 
--- Configure a proximity prompt for instant use
 local function SetupPrompt(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
     pcall(function()
@@ -171,7 +179,6 @@ local function FindPrompt(item)
     return prompt
 end
 
--- Get the main BasePart of an item
 local function GetItemPart(item)
     if not item then return nil end
     if item:IsA("BasePart") then return item end
@@ -184,7 +191,9 @@ local function GetItemPart(item)
     return item:FindFirstChildWhichIsA("BasePart", true)
 end
 
-
+-- ============================================================
+-- CORE: Instant Pickup (Teleport ON TOP of item)
+-- ============================================================
 local function InstantPickup(item)
     if not IsValidItem(item) then return false end
 
@@ -194,7 +203,6 @@ local function InstantPickup(item)
 
     if not root or not part or not prompt then return false end
 
-    -- Teleport the player's RootPart to stand ON TOP of the item
     local partPos = part.Position
     local heightOffset = (part.Size.Y / 2) + 1
     local targetPos = partPos + Vector3.new(0, heightOffset, 0)
@@ -203,7 +211,6 @@ local function InstantPickup(item)
         root.CFrame = CFrame.new(targetPos)
     end)
 
-    -- Fire the prompt instantly
     pcall(function()
         fireproximityprompt(prompt, 0)
     end)
@@ -211,6 +218,9 @@ local function InstantPickup(item)
     return true
 end
 
+-- ============================================================
+-- CORE: Find Highest‑Value Item (PRICE ONLY)
+-- ============================================================
 local function GetBestItem()
     local bestItem = nil
     local bestPrice = -math.huge
@@ -220,6 +230,7 @@ local function GetBestItem()
             local prompt = FindPrompt(item)
             if prompt then
                 local price = GetItemPrice(item)
+                -- 🔥 ONLY compare by price, ignore weight completely
                 if price > bestPrice then
                     bestPrice = price
                     bestItem = item
@@ -230,7 +241,9 @@ local function GetBestItem()
     return bestItem
 end
 
-
+-- ============================================================
+-- CORE: Drop Inventory at HQ
+-- ============================================================
 local DropRemote = ReplicatedStorage:FindFirstChild("RemoteEvents")
                     and ReplicatedStorage.RemoteEvents:FindFirstChild("playerDropItemEvent")
 
@@ -249,7 +262,9 @@ local function DropAllItems()
     end
 end
 
-
+-- ============================================================
+-- STATE: Handle Full Inventory / Weight
+-- ============================================================
 local function HandleFullInventory()
     TeleportHQ()
     task.wait(HQ_PAUSE)
@@ -258,7 +273,9 @@ local function HandleFullInventory()
     return true
 end
 
-
+-- ============================================================
+-- STATE: Check if we should return to HQ
+-- ============================================================
 local function ShouldReturnHQ()
     if IsGoalComplete() then return true, "Goal Complete" end
     if IsQuotaIndicatorActive() then return true, "Quota Reached" end
@@ -268,19 +285,20 @@ local function ShouldReturnHQ()
     return false, nil
 end
 
-
+-- ============================================================
+-- MAIN FARM LOOP
+-- ============================================================
 local function StartAutoFarm()
-    print("[AutoFarm] Started")
+    print("[AutoFarm] Started - Prioritizing HIGHEST PRICE only!")
 
     while FarmRunning do
-        -- Wait for character to be ready
         local root = GetRoot()
         if not root then
             task.wait(0.2)
             continue
         end
 
-        -- Check if we need to return to HQ (Full inv, quota, etc.)
+        -- 1️⃣ Check return conditions (Inventory/Weight full, Quota, Intermission)
         local shouldReturn, reason = ShouldReturnHQ()
         if shouldReturn then
             print("[AutoFarm] Returning to HQ:", reason)
@@ -301,31 +319,33 @@ local function StartAutoFarm()
             end
 
             if reason == "Inventory Full" or reason == "Weight Full" then
-                HandleFullInventory()
+                HandleFullInventory()  -- 🟢 Drop all items at HQ
                 continue
             end
         end
 
-
+        -- 2️⃣ Find the item with the HIGHEST PRICE (Weight is ignored here)
         local item = GetBestItem()
         if item then
             local price = GetItemPrice(item)
             local weight = GetItemWeight(item)
-            print(string.format("[AutoFarm] Picking %s (price: %d, weight: %d)", item.Name, price, weight))
+            print(string.format("[AutoFarm] Picking BEST PRICE: %s (Price: %d, Weight: %d)", item.Name, price, weight))
             InstantPickup(item)
             task.wait(LOOP_DELAY)
         else
-            -- 🔥 ITEM NOT FOUND → Return to HQ & wait for respawns
-            print("[AutoFarm] No items found. Teleporting to HQ and waiting...")
+            -- 3️⃣ If NO items exist, wait at HQ for respawns
+            print("[AutoFarm] No items found. Waiting at HQ...")
             TeleportHQ()
-            task.wait(NO_ITEM_RETURN_DELAY) -- Wait 2 seconds before checking again
+            task.wait(NO_ITEM_RETURN_DELAY)
         end
     end
 
     print("[AutoFarm] Stopped")
 end
 
-
+-- ============================================================
+-- EVENT: Character Respawn
+-- ============================================================
 Player.CharacterAdded:Connect(function(character)
     character:WaitForChild("HumanoidRootPart", 10)
     task.wait(0.2)
@@ -334,7 +354,9 @@ Player.CharacterAdded:Connect(function(character)
     end
 end)
 
-
+-- ============================================================
+-- 🎨 UI: DRAGGABLE TOGGLE (No library required)
+-- ============================================================
 local ToggleGui = Instance.new("ScreenGui")
 ToggleGui.Parent = Player:WaitForChild("PlayerGui")
 ToggleGui.ResetOnSpawn = false
@@ -397,10 +419,10 @@ ThumbCorner.CornerRadius = UDim.new(1, 0)
 
 local function UpdateUI(state)
     if state then
-        Track.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+        Track.BackgroundColor3 = Color3.fromRGB(0, 200, 100) -- Green (ON)
         Thumb.Position = UDim2.new(1, -21, 0, 3)
     else
-        Track.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        Track.BackgroundColor3 = Color3.fromRGB(60, 60, 70) -- Gray (OFF)
         Thumb.Position = UDim2.new(0, 3, 0, 3)
     end
 end
@@ -418,5 +440,7 @@ Thumb.MouseButton1Click:Connect(function()
     end
 end)
 
-
+-- ============================================================
+-- START FARM
+-- ============================================================
 FarmThread = task.spawn(StartAutoFarm)
