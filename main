@@ -30,6 +30,8 @@ local SupportedGames = {
 
     [12076775711] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/PrimalPursuitScript.lua.txt",
 
+    [127332613700317] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/Don'tLookBackScript.lua.txt",
+
 }
 
 
