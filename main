@@ -32,54 +32,8 @@ local SupportedGames = {
 
     [127332613700317] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/Don'tLookBackScript.lua.txt",
     
-    [14170731342] = "https://raw.githubusercontent.com/InoC3nt8Hub/InoC3nt8HubScripts/refs/heads/main/TwistedScript.lua.txt",
 
 }
-
-
-
-local PlaceId = game.PlaceId
-local ScriptURL = SupportedGames[PlaceId]
-
-
-if not ScriptURL then
-    
-    warn("Unsupported Place ID:", PlaceId)
-
-    if LocalPlayer then
-        LocalPlayer:Kick(
-            "This game is not supported.\nPlace ID: "..PlaceId
-        )
-    end
-
-    return
-end
-
-
-local Success, Response = pcall(function()
-
-    local Source = game:HttpGet(ScriptURL)
-
-    local LoadedFunction = loadstring(Source)
-
-    if LoadedFunction then
-        LoadedFunction()
-    end
-
-end)
-
-
-if not Success then
-    
-    warn("Loader Error:", Response)
-
-    if LocalPlayer then
-        LocalPlayer:Kick(
-            "Script failed to load."
-        )
-    end
-
-end}
 
 
 
