@@ -79,4 +79,49 @@ if not Success then
         )
     end
 
+end}
+
+
+
+local PlaceId = game.PlaceId
+local ScriptURL = SupportedGames[PlaceId]
+
+
+if not ScriptURL then
+    
+    warn("Unsupported Place ID:", PlaceId)
+
+    if LocalPlayer then
+        LocalPlayer:Kick(
+            "This game is not supported.\nPlace ID: "..PlaceId
+        )
+    end
+
+    return
+end
+
+
+local Success, Response = pcall(function()
+
+    local Source = game:HttpGet(ScriptURL)
+
+    local LoadedFunction = loadstring(Source)
+
+    if LoadedFunction then
+        LoadedFunction()
+    end
+
+end)
+
+
+if not Success then
+    
+    warn("Loader Error:", Response)
+
+    if LocalPlayer then
+        LocalPlayer:Kick(
+            "Script failed to load."
+        )
+    end
+
 end
